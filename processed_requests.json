@@ -1,0 +1,130 @@
+[
+  {
+    "request_id": 1,
+    "source": "Email",
+    "original_message": "Hi, I tried logging in this morning and keep getting a 403 error. My account is arcvault.io/user/jsmith. This started after your update last Tuesday.",
+    "timestamp": "2026-03-13T23:05:00.000Z",
+    "classification": {
+      "category": "Bug Report",
+      "priority": "Medium",
+      "confidence_score": 90
+    },
+    "enrichment": {
+      "core_issue": "User is unable to log in due to a 403 Forbidden error that began after a recent platform update.",
+      "identifiers": ["arcvault.io/user/jsmith", "403 error"],
+      "urgency_signal": "Urgent"
+    },
+    "routing": {
+      "destination_queue": "Engineering",
+      "routing_reason": "Category 'Bug Report' maps to Engineering"
+    },
+    "escalation": {
+      "escalation_flag": false,
+      "escalation_reasons": []
+    },
+    "summary": "A user is experiencing a 403 Forbidden error when attempting to log in, which started after last Tuesday's platform update. The affected account is arcvault.io/user/jsmith. This should be investigated by Engineering as it may indicate a permissions regression introduced in the recent release."
+  },
+  {
+    "request_id": 2,
+    "source": "Web Form",
+    "original_message": "We'd love to see a bulk export feature for our audit logs. We're a compliance-heavy org and this would save us hours every month.",
+    "timestamp": "2026-03-13T23:10:00.000Z",
+    "classification": {
+      "category": "Feature Request",
+      "priority": "Low",
+      "confidence_score": 95
+    },
+    "enrichment": {
+      "core_issue": "Customer requests a bulk export feature for audit logs to support compliance workflows.",
+      "identifiers": [],
+      "urgency_signal": "Low"
+    },
+    "routing": {
+      "destination_queue": "Product",
+      "routing_reason": "Category 'Feature Request' maps to Product"
+    },
+    "escalation": {
+      "escalation_flag": false,
+      "escalation_reasons": []
+    },
+    "summary": "A compliance-focused customer is requesting a bulk export feature for their audit logs. They report spending hours monthly on manual log retrieval. This is a non-urgent product enhancement request that could benefit the compliance-heavy segment of ArcVault's customer base."
+  },
+  {
+    "request_id": 3,
+    "source": "Support Portal",
+    "original_message": "Invoice #8821 shows a charge of $1,240 but our contract rate is $980/month. Can someone look into this?",
+    "timestamp": "2026-03-13T23:15:00.000Z",
+    "classification": {
+      "category": "Billing Issue",
+      "priority": "Medium",
+      "confidence_score": 95
+    },
+    "enrichment": {
+      "core_issue": "Customer is being overcharged — invoice shows $1,240 versus the contracted rate of $980/month.",
+      "identifiers": ["Invoice #8821", "$1,240", "$980/month"],
+      "urgency_signal": "Urgent"
+    },
+    "routing": {
+      "destination_queue": "Billing",
+      "routing_reason": "Category 'Billing Issue' maps to Billing"
+    },
+    "escalation": {
+      "escalation_flag": false,
+      "escalation_reasons": []
+    },
+    "summary": "Customer reports a billing discrepancy on Invoice #8821, showing a charge of $1,240 against a contracted rate of $980/month — a $260 overage. The Billing team should review the invoice, verify the contract terms, and issue a correction or credit if warranted."
+  },
+  {
+    "request_id": 4,
+    "source": "Email",
+    "original_message": "I'm not sure if this is the right place to ask, but is there a way to set up SSO with Okta? We're evaluating switching our auth provider.",
+    "timestamp": "2026-03-13T23:20:00.000Z",
+    "classification": {
+      "category": "Technical Question",
+      "priority": "Low",
+      "confidence_score": 85
+    },
+    "enrichment": {
+      "core_issue": "Customer is asking whether ArcVault supports SSO integration with Okta as they consider changing auth providers.",
+      "identifiers": ["Okta"],
+      "urgency_signal": "Low"
+    },
+    "routing": {
+      "destination_queue": "Engineering",
+      "routing_reason": "Category 'Technical Question' maps to Engineering"
+    },
+    "escalation": {
+      "escalation_flag": false,
+      "escalation_reasons": []
+    },
+    "summary": "A customer is evaluating Okta as their new auth provider and wants to know if ArcVault supports SSO integration with Okta. This is a pre-sales/technical inquiry with no urgency. Engineering should provide documentation on supported SSO configurations or escalate to Product if Okta is not yet supported."
+  },
+  {
+    "request_id": 5,
+    "source": "Web Form",
+    "original_message": "Your dashboard stopped loading for us around 2pm EST. Checked our end — it's definitely on yours. Multiple users affected.",
+    "timestamp": "2026-03-13T23:25:00.000Z",
+    "classification": {
+      "category": "Incident/Outage",
+      "priority": "High",
+      "confidence_score": 95
+    },
+    "enrichment": {
+      "core_issue": "Customer reports a dashboard outage affecting multiple users, starting at approximately 2pm EST.",
+      "identifiers": ["2pm EST"],
+      "urgency_signal": "Critical"
+    },
+    "routing": {
+      "destination_queue": "Escalation Queue",
+      "routing_reason": "Escalated — Escalation keyword detected: 'stopped loading'; Escalation keyword detected: 'multiple users affected'"
+    },
+    "escalation": {
+      "escalation_flag": true,
+      "escalation_reasons": [
+        "Escalation keyword detected: 'stopped loading'",
+        "Escalation keyword detected: 'multiple users affected'"
+      ]
+    },
+    "summary": "Critical: Multiple users are unable to load the ArcVault dashboard since approximately 2pm EST. The customer has confirmed the issue is not on their end. This has been flagged for immediate escalation as a potential service outage requiring urgent investigation by IT/Security."
+  }
+]

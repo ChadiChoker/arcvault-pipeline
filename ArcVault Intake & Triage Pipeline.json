@@ -1,0 +1,309 @@
+{
+  "name": "ArcVault Intake & Triage Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "arcvault-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f67cd1d8-0953-4ab1-904b-9d4203842dfb",
+      "name": "Step 1 — Webhook Ingestion",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2240,
+        480
+      ],
+      "webhookId": "arcvault-intake"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_GROQ_API_KEY_HERE"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"temperature\": 0.1,\n  \"max_tokens\": 300,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an AI classifier for ArcVault, a B2B software company. Classify incoming customer requests. Return ONLY a valid JSON object with these fields:\\n- category: one of [Bug Report, Feature Request, Billing Issue, Technical Question, Incident/Outage]\\n- priority: one of [Low, Medium, High]\\n- confidence_score: integer 0-100\\n\\nPriority rules:\\n- High: system down, outages, billing overcharges, security issues, multiple users affected\\n- Medium: bugs affecting one user, billing questions, time-sensitive requests\\n- Low: feature requests, general questions, non-urgent inquiries\\n\\nConfidence rules:\\n- 90-100: clearly matches one category\\n- 70-89: likely matches but some ambiguity\\n- Below 70: vague or could fit multiple categories\\n\\nReturn ONLY valid JSON, no markdown, no explanation.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Source: {{ $json.body.source }}\\nMessage: {{ $json.body.message }}\"\n    }\n  ]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "13dbc5b5-4ba5-4a62-97d5-d61ed7177729",
+      "name": "Step 2 — Classification (LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2000,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the classification response from Groq\nconst input = $input.first().json;\nconst rawContent = input.choices[0].message.content;\n\n// Clean markdown fences if present\nlet cleaned = rawContent.trim();\ncleaned = cleaned.replace(/^```json\\s*/, '').replace(/\\s*```$/, '');\n\nconst classification = JSON.parse(cleaned);\n\n// Pass through original request data + classification\nreturn [{\n  json: {\n    request_id: $('Step 1 — Webhook Ingestion').first().json.body.id,\n    source: $('Step 1 — Webhook Ingestion').first().json.body.source,\n    original_message: $('Step 1 — Webhook Ingestion').first().json.body.message,\n    classification: {\n      category: classification.category,\n      priority: classification.priority,\n      confidence_score: classification.confidence_score\n    }\n  }\n}];"
+      },
+      "id": "b7ad6897-efe9-4be1-bd43-96c39321a69d",
+      "name": "Parse Classification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1776,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_GROQ_API_KEY_HERE"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"temperature\": 0.1,\n  \"max_tokens\": 400,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an AI enrichment engine for ArcVault, a B2B software company. Extract structured info from customer messages. Return ONLY a valid JSON object with:\\n- core_issue: one-sentence summary\\n- identifiers: list of any IDs, invoice numbers, error codes, URLs found (empty list if none)\\n- urgency_signal: one of [Critical, Urgent, Normal, Low]\\n  - Critical: system down, outage, multiple users, data loss\\n  - Urgent: blocking issue, billing overcharge, security concern\\n  - Normal: standard request, has workaround\\n  - Low: nice-to-have, general inquiry\\n- summary: 2-3 sentence human-readable summary for the receiving team, be concise and actionable\\n\\nReturn ONLY valid JSON, no markdown, no explanation.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Message: {{ $json.original_message }}\"\n    }\n  ]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "52251df4-b257-46ef-88dc-14f3a7f1803f",
+      "name": "Step 3 — Enrichment (LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1552,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse enrichment + combine with classification + apply routing + escalation\nconst enrichRaw = $input.first().json.choices[0].message.content;\nlet cleaned = enrichRaw.trim().replace(/^```json\\s*/, '').replace(/\\s*```$/, '');\nconst enrichment = JSON.parse(cleaned);\n\n// Get previous data\nconst prev = $('Parse Classification').first().json;\nconst message = prev.original_message;\nconst classification = prev.classification;\n\n// ── STEP 4: ROUTING ──\nconst ROUTING_MAP = {\n  'Bug Report': 'Engineering',\n  'Feature Request': 'Product',\n  'Billing Issue': 'Billing',\n  'Technical Question': 'Engineering',\n  'Incident/Outage': 'IT/Security'\n};\n\nlet destination_queue;\nlet routing_reason;\n\nif (classification.confidence_score < 70) {\n  destination_queue = 'General/Triage';\n  routing_reason = `Low confidence (${classification.confidence_score}%) — routed to triage`;\n} else if (ROUTING_MAP[classification.category]) {\n  destination_queue = ROUTING_MAP[classification.category];\n  routing_reason = `Category '${classification.category}' maps to ${destination_queue}`;\n} else {\n  destination_queue = 'General/Triage';\n  routing_reason = `Unknown category — routed to triage`;\n}\n\n// ── STEP 6: ESCALATION CHECK ──\nconst ESCALATION_KEYWORDS = ['outage', 'down for all users', 'billing error', 'critical', 'emergency', 'security breach', 'stopped loading', 'multiple users affected', 'down for', 'not working for everyone'];\nconst escalation_reasons = [];\n\n// Check 1: Low confidence\nif (classification.confidence_score < 70) {\n  escalation_reasons.push(`Low confidence score: ${classification.confidence_score}%`);\n}\n\n// Check 2: Keywords\nconst msgLower = message.toLowerCase();\nfor (const keyword of ESCALATION_KEYWORDS) {\n  if (msgLower.includes(keyword)) {\n    escalation_reasons.push(`Escalation keyword detected: '${keyword}'`);\n  }\n}\n\n// Check 3: Billing discrepancy > $500\nconst amounts = message.match(/\\$[\\d,]+(?:\\.\\d{2})?/g);\nif (amounts && amounts.length >= 2 && classification.category === 'Billing Issue') {\n  const values = amounts.map(a => parseFloat(a.replace('$', '').replace(',', '')));\n  const discrepancy = Math.abs(values[0] - values[1]);\n  if (discrepancy > 500) {\n    escalation_reasons.push(`Billing discrepancy of $${discrepancy} detected (>$500)`);\n  }\n}\n\nconst escalation_flag = escalation_reasons.length > 0;\n\n// Override routing if escalated\nif (escalation_flag) {\n  destination_queue = 'Escalation Queue';\n  routing_reason = 'Escalated — ' + escalation_reasons.join('; ');\n}\n\n// ── BUILD FINAL RECORD ──\nconst record = {\n  request_id: prev.request_id,\n  source: prev.source,\n  original_message: message,\n  timestamp: new Date().toISOString(),\n  classification: {\n    category: classification.category,\n    priority: classification.priority,\n    confidence_score: classification.confidence_score\n  },\n  enrichment: {\n    core_issue: enrichment.core_issue,\n    identifiers: enrichment.identifiers,\n    urgency_signal: enrichment.urgency_signal\n  },\n  routing: {\n    destination_queue: destination_queue,\n    routing_reason: routing_reason\n  },\n  escalation: {\n    escalation_flag: escalation_flag,\n    escalation_reasons: escalation_reasons\n  },\n  summary: enrichment.summary\n};\n\nreturn [{ json: record }];"
+      },
+      "id": "ce7e4489-150e-4dbe-9299-952ff6887d06",
+      "name": "Steps 4+6 — Routing & Escalation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1344,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "escalation-check",
+              "leftValue": "={{ $json.escalation.escalation_flag }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.boolean.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0063ec4c-5d96-42a3-af74-6531877ac237",
+      "name": "Escalated?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/2c4fd5d6-380a-4967-a91c-38a21dabaae1",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ queue: 'ESCALATION', record: $json }) }}",
+        "options": {}
+      },
+      "id": "a5bf89af-2700-482b-9598-b06f6226f011",
+      "name": "Step 5a — Escalation Queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -880,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/2c4fd5d6-380a-4967-a91c-38a21dabaae1",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ queue: $json.routing.destination_queue, record: $json }) }}",
+        "options": {}
+      },
+      "id": "cfe5b20a-7f2c-4f3f-9db5-c983cc29e142",
+      "name": "Step 5b — Standard Queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -880,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'processed', request_id: $('Steps 4+6 — Routing & Escalation').first().json.request_id, destination: $('Steps 4+6 — Routing & Escalation').first().json.routing.destination_queue, escalated: $('Steps 4+6 — Routing & Escalation').first().json.escalation.escalation_flag }) }}",
+        "options": {}
+      },
+      "id": "8cc42f6a-1b75-4672-b95e-cf66bbd1aed3",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -640,
+        480
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Step 1 — Webhook Ingestion": {
+      "main": [
+        [
+          {
+            "node": "Step 2 — Classification (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 2 — Classification (LLM)": {
+      "main": [
+        [
+          {
+            "node": "Parse Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Classification": {
+      "main": [
+        [
+          {
+            "node": "Step 3 — Enrichment (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 3 — Enrichment (LLM)": {
+      "main": [
+        [
+          {
+            "node": "Steps 4+6 — Routing & Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Steps 4+6 — Routing & Escalation": {
+      "main": [
+        [
+          {
+            "node": "Escalated?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalated?": {
+      "main": [
+        [
+          {
+            "node": "Step 5a — Escalation Queue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Step 5b — Standard Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 5a — Escalation Queue": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 5b — Standard Queue": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "359de4f8-ff08-406f-baed-c0a694816bdd",
+  "meta": {
+    "instanceId": "a41b794912fd6246cb60c01d3edc054360e49a1f93fdb304a87fbabbac958ef8"
+  },
+  "id": "BEyPqeZmoQi8e14s",
+  "tags": []
+}
